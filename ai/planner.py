@@ -219,10 +219,14 @@ class Planner:
 
     def __init__(self, mode: str = "auto",
                  generator=None,
-                 model_name: Optional[str] = None) -> None:
+                 model_name: Optional[str] = None,
+                 device: str = "auto",
+                 quantize: bool = False) -> None:
         self.mode = mode
         self.generator = generator
         self.model_name = model_name
+        self.device = device
+        self.quantize = quantize
 
     def plan(self, topic: str, sections: Optional[List[str]] = None,
              tone: str = "professional") -> Presentation:
@@ -245,7 +249,9 @@ class Planner:
         if self.generator is not None:
             return self.generator
         from ai.json_generator import JSONGenerator
-        self.generator = JSONGenerator(model_name=self.model_name or LLM_DEFAULT_MODEL)
+        self.generator = JSONGenerator(model_name=self.model_name or LLM_DEFAULT_MODEL,
+                                       device=self.device,
+                                       quantize=self.quantize)
         return self.generator
 
     @staticmethod

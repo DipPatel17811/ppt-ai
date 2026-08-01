@@ -15,7 +15,14 @@ from __future__ import annotations
 import json
 from typing import Optional
 
-from config import LLM_DEFAULT_MODEL, LLM_MAX_NEW_TOKENS, LLM_TEMPERATURE, LLM_TIMEOUT_ATTEMPTS
+from config import (
+    LLM_DEFAULT_MODEL,
+    LLM_DEVICE,
+    LLM_MAX_NEW_TOKENS,
+    LLM_QUANTIZE,
+    LLM_TEMPERATURE,
+    LLM_TIMEOUT_ATTEMPTS,
+)
 from schema import Presentation
 
 from ai.validator import JSONParseError, strict_parse
@@ -29,11 +36,13 @@ class JSONGenerator:
     """A thin, lazy wrapper around a transformers text-generation pipeline."""
 
     def __init__(self, model_name: str = LLM_DEFAULT_MODEL,
-                 device: str = "auto",
+                 device: str = LLM_DEVICE,
+                 quantize: bool = LLM_QUANTIZE,
                  temperature: float = LLM_TEMPERATURE,
                  max_new_tokens: int = LLM_MAX_NEW_TOKENS) -> None:
         self.model_name = model_name
         self.device = device
+        self.quantize = quantize
         self.temperature = temperature
         self.max_new_tokens = max_new_tokens
         self._pipeline = None
@@ -54,17 +63,37 @@ class JSONGenerator:
                 "torch / transformers are not installed. Install them with "
                 "`pip install torch transformers` or use mode='deterministic'."
             ) from exc
+
         kwargs = {}
-        if self.device == "cpu":
+        device = self.device
+        if self.quantize:
+            # 4-bit loading handles bigger models on a small GPU (e.g. Colab T4)
+            kwargs["device_map"] = "auto"
+            kwargs["model_kwargs"] = {"load_in_4bit": True}
+        elif device in ("auto", "cuda", "gpu"):
+            try:
+                kwargs["device"] = 0 if torch.cuda.is_available() else -1
+            except Exception:
+                kwargs["device"] = -1
+        elif device == "cpu":
             kwargs["device"] = -1
-        return hf_pipeline(
-            "text-generation",
-            model=self.model_name,
-            max_new_tokens=self.max_new_tokens,
-            temperature=self.temperature,
-            do_sample=self.temperature > 0,
-            **kwargs,
-        )
+        else:
+            kwargs["device"] = 0
+
+        try:
+            return hf_pipeline(
+                "text-generation",
+                model=self.model_name,
+                max_new_tokens=self.max_new_tokens,
+                temperature=self.temperature,
+                do_sample=self.temperature > 0,
+                **kwargs,
+            )
+        except ImportError as exc:  # pragma: no cover - bitsandbytes missing
+            raise TransformersUnavailableError(
+                "Quantized loading needs `pip install bitsandbytes`. "
+                "Or retry without --quantize."
+            ) from exc
 
     # -- prompt ----------------------------------------------------------
     @staticmethod

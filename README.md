@@ -100,6 +100,35 @@ python app.py validate sample.pptx
 `generate`/`ast` accept `--theme`, `--aspect 16:9|16:10|4:3`, `--sections
 title,bullets,process`, `--tone`, and `--json` (AST-only output).
 
+## Google Colab (free T4)
+
+Rendering and validation need no GPU. The AI path can use the free T4 for a
+small instruct model.
+
+```python
+# In a Colab cell
+!git clone https://github.com/DipPatel17811/ppt-ai.git
+%cd ppt-ai
+!pip install -q -r requirements.txt transformers
+
+# Offline, deterministic deck (no GPU needed)
+!python app.py generate "Digital Transformation" --mode deterministic -o deck.pptx --validate
+
+# AI mode on the free T4 (default model: Qwen2.5-1.5B-Instruct)
+!python app.py generate "Digital Transformation" --mode ai --device auto -o deck.pptx --validate
+
+# Bigger model via 4-bit quantisation (needs bitsandbytes)
+!pip install -q bitsandbytes
+!python app.py generate "Digital Transformation" --mode ai --model google/gemma-2-2b-it --device auto --quantize -o deck.pptx --validate
+
+# Download the deck
+from google.colab import files
+files.download("deck.pptx")
+```
+
+`--device auto` moves the model to the GPU automatically (`cuda` when
+available, otherwise CPU); `--quantize` loads in 4-bit for larger models.
+
 ## Tests
 
 Uses the standard library (`unittest`), so no extra install is needed:

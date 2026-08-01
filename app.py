@@ -52,7 +52,8 @@ def _generate(args) -> None:
     from validator import validate_presentation
 
     sections = args.sections.split(",") if args.sections else None
-    planner = Planner(mode=args.mode, model_name=args.model)
+    planner = Planner(mode=args.mode, model_name=args.model,
+                      device=args.device, quantize=args.quantize)
     ast = planner.plan(args.topic, sections=sections, tone=args.tone)
 
     if args.aspect:
@@ -82,7 +83,8 @@ def _ast(args) -> None:
     from ai.planner import Planner
 
     sections = args.sections.split(",") if args.sections else None
-    planner = Planner(mode=args.mode, model_name=args.model)
+    planner = Planner(mode=args.mode, model_name=args.model,
+                      device=args.device, quantize=args.quantize)
     ast = planner.plan(args.topic, sections=sections, tone=args.tone)
     if args.theme:
         ast.theme = args.theme
@@ -149,6 +151,10 @@ def main(argv=None) -> None:
     p_gen.add_argument("-o", "--output", default=DEFAULT_OUTPUT)
     p_gen.add_argument("--mode", choices=["auto", "ai", "deterministic"], default="auto")
     p_gen.add_argument("--model", default=None, help="HuggingFace model id or alias")
+    p_gen.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto",
+                       help="Device for the LLM (auto = GPU when available)")
+    p_gen.add_argument("--quantize", action="store_true",
+                       help="Load the model in 4-bit (needs bitsandbytes)")
     p_gen.add_argument("--theme", default=None)
     p_gen.add_argument("--aspect", choices=["16:9", "16:10", "4:3"], default=None)
     p_gen.add_argument("--sections", default=None,
@@ -163,6 +169,8 @@ def main(argv=None) -> None:
     p_ast.add_argument("-o", "--output", default=None)
     p_ast.add_argument("--mode", choices=["auto", "ai", "deterministic"], default="auto")
     p_ast.add_argument("--model", default=None)
+    p_ast.add_argument("--device", choices=["auto", "cuda", "cpu"], default="auto")
+    p_ast.add_argument("--quantize", action="store_true")
     p_ast.add_argument("--theme", default=None)
     p_ast.add_argument("--sections", default=None)
     p_ast.add_argument("--tone", default="professional")
