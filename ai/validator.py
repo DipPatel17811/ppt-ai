@@ -246,7 +246,8 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
 
     def _pick_text(item: dict) -> Optional[str]:
         for key in ("text", "title", "step", "phase", "event", "task",
-                    "label", "name", "metric", "date", "description", "bullet"):
+                    "label", "name", "metric", "date", "description", "bullet",
+                    "topic"):
             value = item.get(key)
             if isinstance(value, str) and value:
                 return value
@@ -272,9 +273,10 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
             copy["items"] = _as_strings(copy["items"], "text")
         return copy
 
-    if stype == "timeline" and isinstance(copy.get("items"), list):
+    if stype == "timeline" and (isinstance(copy.get("items"), list)
+                                or isinstance(copy.get("events"), list)):
         items = []
-        for item in copy["items"]:
+        for item in copy.get("items") or copy.get("events", []):
             if isinstance(item, str):
                 items.append({"title": item})
             elif isinstance(item, dict):
@@ -285,6 +287,7 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
                     "detail": item.get("description") or item.get("detail"),
                 })
         copy["items"] = items[:MAX_TIMELINE_ITEMS]
+        copy.pop("events", None)
         return copy
 
     if stype == "process":
@@ -366,6 +369,28 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
         return copy
 
     if stype == "comparison":
+        comps = copy.get("comparisons")
+        if isinstance(comps, list):
+            left = right = None
+            for item in comps:
+                if not isinstance(item, dict):
+                    continue
+                if "left" in item:
+                    left = item["left"]
+                if "right" in item:
+                    right = item["right"]
+            for side, value in (("left", left), ("right", right)):
+                if isinstance(value, dict):
+                    copy[side] = {
+                        "heading": value.get("name") or value.get("heading") or "",
+                        "subheading": value.get("subheading"),
+                        "points": ([value["description"]]
+                                   if isinstance(value.get("description"), str)
+                                   and value["description"] else []),
+                        "icon": value.get("icon"),
+                    }
+            copy.pop("comparisons", None)
+            return copy
         if not copy.get("left") and not copy.get("right"):
             chart = copy.get("chart")
             if isinstance(chart, dict) and not chart.get("categories"):

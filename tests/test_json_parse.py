@@ -192,6 +192,35 @@ class JsonRepairTests(unittest.TestCase):
         self.assertEqual([s.type for s in ast.slides],
                          ["agenda", "timeline", "bullets"])
 
+    def test_coerce_comparison_comparisons_columns(self):
+        raw = ('{"title":"Deck","slides":[{"type":"comparison","title":"C",'
+               '"comparisons":[{"left":{"name":"Old","description":"Slow and costly"}},'
+               '{"right":{"name":"New","description":"Fast and cheap"}}]}]}')
+        ast = strict_parse(raw)
+        comp = [s for s in ast.slides if s.type == "comparison"][0]
+        self.assertEqual(comp.left.heading, "Old")
+        self.assertEqual(comp.left.points, ["Slow and costly"])
+        self.assertEqual(comp.right.heading, "New")
+        self.assertEqual(comp.right.points, ["Fast and cheap"])
+
+    def test_coerce_timeline_events_to_items(self):
+        raw = ('{"title":"Deck","slides":[{"type":"timeline","title":"T",'
+               '"events":[{"date":"2023-01-01","event":"Kick off"},'
+               '{"date":"2023-06-01","event":"Ship it","description":"GA"}]}]}')
+        ast = strict_parse(raw)
+        tl = [s for s in ast.slides if s.type == "timeline"][0]
+        self.assertEqual(tl.items[0].label, "2023-01-01")
+        self.assertEqual(tl.items[0].title, "Kick off")
+        self.assertEqual(tl.items[1].detail, "GA")
+
+    def test_coerce_agenda_topic_items(self):
+        raw = ('{"title":"Deck","slides":[{"type":"agenda","title":"Agenda",'
+               '"items":[{"topic":"Intro","duration":"30"},'
+               '{"topic":"Roadmap","duration":"45"}]}]}')
+        ast = strict_parse(raw)
+        agenda = [s for s in ast.slides if s.type == "agenda"][0]
+        self.assertEqual(agenda.items, ["Intro", "Roadmap"])
+
     def test_repair_echoed_deck_truncated_first_value(self):
         # The model echoes the whole deck but the first deck is cut off
         # (missing its closing ``}``) because generation hit the token cap.
