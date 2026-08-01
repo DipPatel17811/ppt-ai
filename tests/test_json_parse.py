@@ -151,6 +151,23 @@ class JsonRepairTests(unittest.TestCase):
         ast = strict_parse(raw)
         self.assertEqual(ast.title, "Deck")
 
+    def test_repair_missing_comma_before_literal_keyword(self):
+        raw = ('{"title":"Deck","slides":[{"type":"bullets","title":"X",'
+               '"bullets":[{"text":"a","highlight":true "level":1}]}]}')
+        ast = strict_parse(raw)
+        bullets = [s for s in ast.slides if s.type == "bullets"][0]
+        self.assertEqual(bullets.bullets[0].text, "a")
+        self.assertTrue(bullets.bullets[0].highlight)
+        self.assertEqual(bullets.bullets[0].level, 1)
+
+    def test_repair_missing_comma_after_literal_keyword(self):
+        raw = ('{"title":"Deck","slides":[{"type":"bullets","title":"X",'
+               '"bullets":[{"text":"a","icon":"star","highlight":false "level":2}]}]}')
+        ast = strict_parse(raw)
+        bullets = [s for s in ast.slides if s.type == "bullets"][0]
+        self.assertFalse(bullets.bullets[0].highlight)
+        self.assertEqual(bullets.bullets[0].level, 2)
+
     def test_repair_preserves_apostrophe_text(self):
         raw = ('{"title":"Deck","slides":[{"type":"bullets","title":"B",'
                '"bullets":[{"text":"It\'s a great plan"}]}]}')

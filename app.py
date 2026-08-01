@@ -21,6 +21,20 @@ from pathlib import Path
 from config import DEFAULT_OUTPUT, DEFAULT_THEME
 
 
+def _dump_failed_output(exc) -> None:
+    """Surface the raw model output that failed JSON repair."""
+    print(f"[error] {exc.message}", file=sys.stderr)
+    if exc.detail:
+        print(f"[error] JSON parser detail: {exc.detail}", file=sys.stderr)
+    raw = (exc.raw or "").strip()
+    if raw:
+        path = Path("failed_output.txt")
+        path.write_text(raw, encoding="utf-8")
+        print(f"[error] raw model output saved to {path}", file=sys.stderr)
+        snippet = raw if len(raw) <= 1200 else raw[:600] + " ... " + raw[-600:]
+        print(f"[error] raw output snippet:\n{snippet}", file=sys.stderr)
+
+
 def _build_ast(args) -> None:
     from ai.validator import JSONParseError, strict_parse
     from renderer import PresentationRenderer
@@ -48,13 +62,18 @@ def _build_ast(args) -> None:
 
 def _generate(args) -> None:
     from ai.planner import Planner
+    from ai.validator import JSONParseError
     from renderer import PresentationRenderer
     from validator import validate_presentation
 
     sections = args.sections.split(",") if args.sections else None
     planner = Planner(mode=args.mode, model_name=args.model,
                       device=args.device, quantize=args.quantize)
-    ast = planner.plan(args.topic, sections=sections, tone=args.tone)
+    try:
+        ast = planner.plan(args.topic, sections=sections, tone=args.tone)
+    except JSONParseError as exc:
+        _dump_failed_output(exc)
+        raise
 
     if args.aspect:
         ast.aspect = args.aspect  # type: ignore[assignment]

@@ -54,13 +54,16 @@ def _strip_fences(raw: str) -> str:
 _MARK = "\x00"
 _PH_RE = r"\x00\d+\x00"
 _STRING_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
+_LITERAL_RE = re.compile(r"\b(?:true|false|null)\b")
 
 
 def _mask_strings(text: str) -> Tuple[str, List[str]]:
-    """Replace every JSON string literal with a placeholder token.
+    """Replace JSON string literals and bare literals with placeholders.
 
     After masking, structural characters (``{`` ``}`` ``[`` ``]``) inside
-    string values can no longer confuse the structural repairs.
+    string values can no longer confuse the structural repairs, and the
+    ``true``/``false``/``null`` keywords are treated like any other value so
+    missing-comma repair covers them uniformly.
     """
     tokens: List[str] = []
 
@@ -68,7 +71,8 @@ def _mask_strings(text: str) -> Tuple[str, List[str]]:
         tokens.append(match.group(0))
         return "%s%d%s" % (_MARK, len(tokens) - 1, _MARK)
 
-    return _STRING_RE.sub(_replace, text), tokens
+    masked = _STRING_RE.sub(_replace, text)
+    return _LITERAL_RE.sub(_replace, masked), tokens
 
 
 def _unmask(masked: str, tokens: List[str]) -> str:

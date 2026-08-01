@@ -82,8 +82,9 @@ class JSONGenerator:
 
         try:
             # Generation parameters (max_new_tokens / temperature) are passed
-            # at call time in ``generate``; constructing the pipeline with them
-            # triggers transformers deprecation warnings about generation_config.
+            # at call time as a single GenerationConfig; constructing the
+            # pipeline with them triggers transformers deprecation warnings
+            # about generation_config.
             return hf_pipeline(
                 "text-generation",
                 model=self.model_name,
@@ -134,14 +135,22 @@ class JSONGenerator:
     # -- generation ------------------------------------------------------
     def generate(self, topic: str, sections: Optional[list] = None,
                  tone: str = "professional") -> str:
+        from transformers import GenerationConfig
+
         prompt = self.build_prompt(topic, sections, tone)
-        outputs = self.pipeline(
-            prompt,
+        # Pass a single `generation_config` rather than individual kwargs:
+        # the text-generation pipeline injects its own generation_config into
+        # `model.generate`, so extra kwargs both clash with it (deprecation
+        # warning) and re-trigger the "max_new_tokens and max_length set"
+        # warning.  max_length=None avoids that conflict; length is derived
+        # from max_new_tokens at generate time.
+        generation_config = GenerationConfig(
             max_new_tokens=self.max_new_tokens,
             max_length=None,
             temperature=self.temperature,
             do_sample=self.temperature > 0,
         )
+        outputs = self.pipeline(prompt, generation_config=generation_config)
         text = outputs[0]["generated_text"]
         # strip the prompt echo if the model repeats it
         if text.startswith(prompt):
