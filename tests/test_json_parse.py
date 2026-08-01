@@ -129,6 +129,23 @@ class JsonRepairTests(unittest.TestCase):
         self.assertEqual(ast.title, "Deck")
         self.assertEqual(len(ast.slides), 1)
 
+    def test_repair_extra_data_large_echoed_deck(self):
+        deck = ('{"title":"Deck","theme":"corporate","slides":['
+                '{"type":"title","title":"A","subtitle":"s"},'
+                '{"type":"agenda","title":"Agenda","items":["One","Two","Three"]},'
+                '{"type":"bullets","title":"B","bullets":[{"text":"one"},{"text":"two"}]},'
+                '{"type":"process","title":"P","steps":["a","b","c","d"]}]}')
+        raw = deck + deck
+        ast = strict_parse(raw)
+        self.assertEqual(ast.title, "Deck")
+        self.assertEqual(len(ast.slides), 4)
+
+    def test_repair_extra_data_after_deck_with_trailing_prose_brace(self):
+        raw = ('{"title":"Deck","slides":[{"type":"title","title":"A"}]}'
+               'That wraps up the deck }')
+        ast = strict_parse(raw)
+        self.assertEqual(ast.title, "Deck")
+
     def test_repair_single_quotes(self):
         raw = "{'title':'Deck','slides':[{'type':'title','title':'Hello'}]}"
         ast = strict_parse(raw)

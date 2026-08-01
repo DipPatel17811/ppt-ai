@@ -138,6 +138,7 @@ class JSONGenerator:
         outputs = self.pipeline(
             prompt,
             max_new_tokens=self.max_new_tokens,
+            max_length=None,
             temperature=self.temperature,
             do_sample=self.temperature > 0,
         )

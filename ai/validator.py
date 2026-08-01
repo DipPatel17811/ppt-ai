@@ -158,11 +158,22 @@ def _is_plausible(data) -> bool:
 
 
 def _try_parse_with_truncation(text: str) -> Optional[dict]:
-    """Parse ``text``; on failure, salvage a trailing-truncated prefix."""
+    """Parse ``text``; on failure, salvage the first value or a truncation."""
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
+
+    # "Extra data": the model echoed a second object (or prose containing a
+    # closing brace) after a complete first value.  ``raw_decode`` returns
+    # exactly the first value no matter how much junk follows it.
+    try:
+        data, _ = json.JSONDecoder().raw_decode(text)
+    except (json.JSONDecodeError, ValueError):
+        pass
+    else:
+        if _is_plausible(data):
+            return data
 
     masked, tokens = _mask_strings(text)
     cut_points = [match.end() for match in re.finditer(
