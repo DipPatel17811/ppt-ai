@@ -1,0 +1,24 @@
+{
+  "name": "midnight",
+  "mode": "dark",
+  "background": "#0b0e14",
+  "foreground": "#eef1f6",
+  "muted": "#8b95a5",
+  "primary": "#4c8bff",
+  "secondary": "#38c0b8",
+  "accent": "#ffc24b",
+  "success": "#4fd18b",
+  "warning": "#ff9d45",
+  "danger": "#ff5c5c",
+  "heading_font": "Segoe UI",
+  "body_font": "Segoe UI",
+  "mono_font": "Consolas",
+  "chart_palette": [
+    "#4c8bff",
+    "#38c0b8",
+    "#ffc24b",
+    "#ff5c5c",
+    "#a97bff",
+    "#5cd6d6"
+  ]
+}

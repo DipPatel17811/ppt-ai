@@ -1,0 +1,25 @@
+{
+  "name": "corporate",
+  "mode": "light",
+  "background": "#ffffff",
+  "foreground": "#16233b",
+  "muted": "#5a6b83",
+  "primary": "#0f4c81",
+  "secondary": "#1f8a8f",
+  "accent": "#f2a03d",
+  "success": "#2e9e5b",
+  "warning": "#d97b29",
+  "danger": "#c0392b",
+  "heading_font": "Segoe UI",
+  "body_font": "Segoe UI",
+  "mono_font": "Consolas",
+  "chart_palette": [
+    "#0f4c81",
+    "#1f8a8f",
+    "#f2a03d",
+    "#c0392b",
+    "#6b5b95",
+    "#3a6ea5",
+    "#5a6b83"
+  ]
+}

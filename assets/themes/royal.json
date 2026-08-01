@@ -1,0 +1,24 @@
+{
+  "name": "royal",
+  "mode": "dark",
+  "background": "#101623",
+  "foreground": "#f2f5fa",
+  "muted": "#9aa7bd",
+  "primary": "#3b6fd4",
+  "secondary": "#3fb6b0",
+  "accent": "#f2b441",
+  "success": "#48c78e",
+  "warning": "#f0933f",
+  "danger": "#e05656",
+  "heading_font": "Segoe UI",
+  "body_font": "Segoe UI",
+  "mono_font": "Consolas",
+  "chart_palette": [
+    "#3b6fd4",
+    "#3fb6b0",
+    "#f2b441",
+    "#e05656",
+    "#9c6bd4",
+    "#4f8fd4"
+  ]
+}

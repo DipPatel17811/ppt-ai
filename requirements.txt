@@ -1,0 +1,12 @@
+python-pptx>=1.0
+lxml>=5.0
+pydantic>=2.6
+
+# Optional: accurate text-fit measurement
+Pillow>=10.0
+
+# Optional: AI generation path (DeterministicPlanner works without these)
+# torch>=2.2
+# transformers>=4.40
+# matplotlib>=3.8   # fallback chart rendering only
+# plotly>=5.20      # unused in deterministic mode

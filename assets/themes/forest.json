@@ -1,0 +1,24 @@
+{
+  "name": "forest",
+  "mode": "light",
+  "background": "#fcfdf9",
+  "foreground": "#1c2620",
+  "muted": "#5c6b62",
+  "primary": "#1f5f46",
+  "secondary": "#3f7a8c",
+  "accent": "#d9a93b",
+  "success": "#2e7d3b",
+  "warning": "#c9872e",
+  "danger": "#b0403a",
+  "heading_font": "Segoe UI",
+  "body_font": "Segoe UI",
+  "mono_font": "Consolas",
+  "chart_palette": [
+    "#1f5f46",
+    "#3f7a8c",
+    "#d9a93b",
+    "#b0403a",
+    "#7a8c3f",
+    "#5c6b62"
+  ]
+}

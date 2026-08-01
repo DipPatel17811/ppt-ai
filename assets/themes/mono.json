@@ -1,0 +1,24 @@
+{
+  "name": "mono",
+  "mode": "light",
+  "background": "#ffffff",
+  "foreground": "#111111",
+  "muted": "#6b6b6b",
+  "primary": "#111111",
+  "secondary": "#444444",
+  "accent": "#888888",
+  "success": "#2e7d3b",
+  "warning": "#8a6d1f",
+  "danger": "#9c2f2f",
+  "heading_font": "Segoe UI",
+  "body_font": "Segoe UI",
+  "mono_font": "Consolas",
+  "chart_palette": [
+    "#111111",
+    "#444444",
+    "#888888",
+    "#bbbbbb",
+    "#6b6b6b",
+    "#333333"
+  ]
+}

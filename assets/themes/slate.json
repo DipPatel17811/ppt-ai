@@ -1,0 +1,24 @@
+{
+  "name": "slate",
+  "mode": "light",
+  "background": "#fbfbfc",
+  "foreground": "#1e2630",
+  "muted": "#6a7686",
+  "primary": "#2f3a4f",
+  "secondary": "#4a7fb5",
+  "accent": "#d98e32",
+  "success": "#3d8b6d",
+  "warning": "#c9872e",
+  "danger": "#b0403a",
+  "heading_font": "Segoe UI",
+  "body_font": "Segoe UI",
+  "mono_font": "Consolas",
+  "chart_palette": [
+    "#2f3a4f",
+    "#4a7fb5",
+    "#d98e32",
+    "#b0403a",
+    "#3d8b6d",
+    "#8b6f47"
+  ]
+}
