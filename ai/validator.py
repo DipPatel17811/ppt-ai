@@ -129,10 +129,65 @@ def _fix_missing_slide_braces(masked: str, tokens: List[str]) -> str:
     return re.sub(r"}\s*,\s*(%s):" % _PH_RE, _replace, masked)
 
 
+def _fix_unclosed_array_items(masked: str) -> str:
+    """Insert a ``}`` where the model omitted an array element's closing brace.
+
+    Qwen merges comparison columns as ``[{"left":{...},{"right":{...}}]``:
+    the first ``{`` is never closed, leaving a bare ``,{`` inside an open
+    object.  In valid JSON a comma inside an object must be followed by a key,
+    so ``,[`` or ``,{`` can only mean the previous object was left open.
+
+    When the close we insert is the one the model "moved" to the array's end,
+    the array also carries a spurious trailing ``}`` right before ``]``; that
+    extra close is dropped so the array parses.
+    """
+    out: List[str] = []
+    stack: List[str] = []
+    index = 0
+    length = len(masked)
+    while index < length:
+        char = masked[index]
+        if char == _MARK:
+            end = masked.find(_MARK, index + 1)
+            if end == -1:
+                out.append(masked[index:])
+                break
+            out.append(masked[index:end + 1])
+            index = end + 1
+            continue
+        if char in "{[":
+            stack.append(char)
+        elif char == "]":
+            if stack:
+                stack.pop()
+        elif char == "}":
+            if (not stack or stack[-1] != "{") and re.match(r"\s*([\]}])", masked[index + 1:]):
+                # A close that matches no open object, directly before the
+                # array's ``]``/``}``, is the spurious ``}`` the model
+                # "moved" to the end of an array element -- drop it.
+                index += 1
+                continue
+            if stack:
+                stack.pop()
+        elif char == ",":
+            if stack and stack[-1] == "{" and re.match(r"\s*([{\[])", masked[index + 1:]):
+                out.append("},")
+                stack.pop()
+                index += 1
+                continue
+        out.append(char)
+        index += 1
+    return "".join(out)
+
+
 def _structural_repair(text: str) -> str:
     masked, tokens = _mask_strings(text)
     masked = _fix_structure(masked)
+    # Slide ``{``s must exist before the array close-brace fix evaluates the
+    # stack: ``]}, \"type\":...`` drops a slide's ``{``, so its matching ``}``
+    # would otherwise look like a spurious extra close at the array level.
     masked = _fix_missing_slide_braces(masked, tokens)
+    masked = _fix_unclosed_array_items(masked)
     return _unmask(masked, tokens)
 
 
@@ -183,22 +238,40 @@ def _is_plausible(data) -> bool:
 
 
 def _try_parse_with_truncation(text: str) -> Optional[dict]:
-    """Parse ``text``; on failure, salvage the first value or a truncation."""
+    """Parse ``text``; on failure, salvage the best deck in the output."""
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
 
-    # "Extra data": the model echoed a second object (or prose containing a
-    # closing brace) after a complete first value.  ``raw_decode`` returns
-    # exactly the first value no matter how much junk follows it.
-    try:
-        data, _ = json.JSONDecoder().raw_decode(text)
-    except (json.JSONDecodeError, ValueError):
-        pass
-    else:
-        if _is_plausible(data):
-            return data
+    # The model often emits a (possibly malformed) deck, extra slides as
+    # sibling objects, then an echo of the full deck.  Collect every complete
+    # top-level value and keep the largest plausible deck rather than blindly
+    # taking the first value.
+    best: Optional[dict] = None
+    index = 0
+    length = len(text)
+    decoder = json.JSONDecoder()
+    while index < length:
+        while index < length and text[index] in " \t\r\n":
+            index += 1
+        if index >= length:
+            break
+        try:
+            data, end = decoder.raw_decode(text, index)
+        except (json.JSONDecodeError, ValueError) as exc:
+            # A malformed top-level value (e.g. the truncated compact deck that
+            # precedes the echoed deck) must not abort the scan -- skip past
+            # the failure and keep looking for the next complete value.
+            if isinstance(exc, json.JSONDecodeError):
+                index = max(exc.pos + 1, index + 1)
+            else:
+                index += 1
+            continue
+        index = end
+        if _is_plausible(data) and (
+                best is None or len(data["slides"]) > len(best["slides"])):
+            best = data
 
     masked, tokens = _mask_strings(text)
     cut_points = [match.end() for match in re.finditer(
@@ -210,9 +283,10 @@ def _try_parse_with_truncation(text: str) -> Optional[dict]:
             data = json.loads(_unmask(closed, tokens))
         except json.JSONDecodeError:
             continue
-        if _is_plausible(data):
-            return data
-    return None
+        if _is_plausible(data) and (
+                best is None or len(data["slides"]) > len(best["slides"])):
+            best = data
+    return best
 
 
 def _repair_json(text: str) -> Optional[dict]:
@@ -247,7 +321,7 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
     def _pick_text(item: dict) -> Optional[str]:
         for key in ("text", "title", "step", "phase", "event", "task",
                     "label", "name", "metric", "date", "description", "bullet",
-                    "topic"):
+                    "topic", "action"):
             value = item.get(key)
             if isinstance(value, str) and value:
                 return value
@@ -271,6 +345,9 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
     if stype == "agenda":
         if isinstance(copy.get("items"), list):
             copy["items"] = _as_strings(copy["items"], "text")
+        elif isinstance(copy.get("agendas"), list):
+            copy["items"] = _as_strings(copy["agendas"], "topic")
+        copy.pop("agendas", None)
         return copy
 
     if stype == "timeline" and (isinstance(copy.get("items"), list)
@@ -311,6 +388,16 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
         return copy
 
     if stype == "cycle":
+        if isinstance(copy.get("cycles"), list):
+            stages = []
+            for entry in copy["cycles"]:
+                if isinstance(entry, dict):
+                    steps = entry.get("steps", entry.get("stages", []))
+                    if isinstance(steps, list):
+                        stages.extend(_as_strings(steps, "step"))
+            copy["stages"] = stages[:MAX_STEPS]
+            copy.pop("cycles", None)
+            return copy
         stages = copy.get("phases") if isinstance(copy.get("phases"), list) \
             else copy.get("stages")
         if isinstance(stages, list):
@@ -319,6 +406,22 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
         return copy
 
     if stype == "hierarchy":
+        if (not isinstance(copy.get("root"), dict)
+                and isinstance(copy.get("hierarchies"), list)):
+            children = []
+            for entry in copy["hierarchies"]:
+                if isinstance(entry, dict):
+                    children.append({
+                        "name": entry.get("level") or entry.get("name")
+                                or entry.get("role") or "",
+                        "role": entry.get("role") or entry.get("level"),
+                    })
+                elif isinstance(entry, str):
+                    children.append({"name": entry})
+            copy["root"] = {"name": copy.get("title") or "Organization",
+                            "children": children[:MAX_HIERARCHY_NODES]}
+            copy.pop("hierarchies", None)
+            return copy
         if not isinstance(copy.get("root"), dict) and isinstance(copy.get("levels"), list):
             children = []
             for level in copy["levels"]:
@@ -336,6 +439,33 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
         return copy
 
     if stype == "dashboard":
+        if isinstance(copy.get("dashboards"), list):
+            metrics = []
+            for entry in copy["dashboards"]:
+                if isinstance(entry, str):
+                    metrics.append({"label": entry, "value": ""})
+                elif isinstance(entry, dict):
+                    data = entry.get("data")
+                    value = ""
+                    if isinstance(data, list):
+                        last = data[-1] if data else None
+                        if isinstance(last, list) and len(last) >= 2:
+                            value = str(last[-1])
+                        elif isinstance(last, (int, float)):
+                            value = str(last)
+                    subtitles = entry.get("subtitles")
+                    if not value and isinstance(subtitles, list) and subtitles:
+                        value = str(subtitles[0])
+                    metrics.append({
+                        "label": entry.get("metric") or entry.get("label") or "",
+                        "value": value,
+                        "note": (str(subtitles[0]) if isinstance(subtitles, list)
+                                 and subtitles else None),
+                        "icon": entry.get("icon"),
+                    })
+            copy["metrics"] = metrics[:MAX_DASHBOARD_METRICS]
+            copy.pop("dashboards", None)
+            return copy
         if isinstance(copy.get("metrics"), list):
             metrics = []
             for metric in copy["metrics"]:
@@ -352,16 +482,36 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
         return copy
 
     if stype == "swot":
+        quad = {"strengths": [], "weaknesses": [],
+                "opportunities": [], "threats": []}
+        src_map = (("strength", "strengths"), ("weakness", "weaknesses"),
+                   ("opportunity", "opportunities"), ("threat", "threats"))
+        moved = False
+
+        def _collect(key: str, value) -> None:
+            nonlocal moved
+            if isinstance(value, str) and value:
+                quad[key].append(value)
+                moved = True
+
         rows = copy.get("analysis")
-        if isinstance(rows, list) and all(isinstance(r, dict) for r in rows):
-            quad = {"strengths": [], "weaknesses": [],
-                    "opportunities": [], "threats": []}
-            for src, dst in (("strength", "strengths"), ("weakness", "weaknesses"),
-                             ("opportunity", "opportunities"), ("threat", "threats")):
-                for row in rows:
-                    value = row.get(src)
-                    if isinstance(value, str) and value:
-                        quad[dst].append(value)
+        if isinstance(rows, list):
+            for row in rows:
+                if isinstance(row, dict):
+                    for src, dst in src_map:
+                        _collect(dst, row.get(src))
+        for qkey in quad:
+            value = copy.get(qkey)
+            if isinstance(value, list) and value and any(
+                    isinstance(item, dict) for item in value):
+                for item in value:
+                    if isinstance(item, str):
+                        quad[qkey].append(item)
+                    elif isinstance(item, dict):
+                        for src, dst in src_map:
+                            _collect(dst, item.get(src))
+                moved = True
+        if moved:
             for key, values in quad.items():
                 copy[key] = {"title": key.capitalize(),
                              "items": values[:MAX_SWOT_ITEMS]}
@@ -432,12 +582,37 @@ def _coerce(data) -> dict:
             raise JSONParseError("Every slide must be an object")
         if "type" not in slide or not isinstance(slide["type"], str):
             raise JSONParseError("Every slide must declare a 'type'")
-        shaped = _normalize_slide(slide)
-        if shaped is not None:
-            _coerce_lists(shaped)
-            normalized.append(shaped)
+        for shaped in _split_merged_slides(slide):
+            shaped = _normalize_slide(shaped)
+            if shaped is not None:
+                _coerce_lists(shaped)
+                normalized.append(shaped)
     data["slides"] = normalized
     return data
+
+
+def _split_merged_slides(slide: dict) -> list:
+    """Split an object that merges two slides (Qwen merges dashboard + SWOT).
+
+    The model emits ``{"type": "dashboard", "dashboards": [...], "type": "swot",
+    "strengths": [...]}`` as a single object; duplicate ``"type"``/``"title"``
+    keys make the last one win, so the dashboard half loses its title.  Return
+    the two slides it was meant to be.
+    """
+    stype = slide["type"]
+    swot_keys = ("strengths", "weaknesses", "opportunities", "threats", "analysis")
+    if stype == "swot" and "dashboards" in slide:
+        dashboard = {"type": "dashboard", "title": "Performance Dashboard",
+                     "dashboards": slide.pop("dashboards")}
+        return [dashboard, slide]
+    if stype == "dashboard" and any(slide.get(key) for key in swot_keys):
+        swot = {"type": "swot", "title": "SWOT Analysis"}
+        for key in swot_keys:
+            if key in slide:
+                swot[key] = slide[key]
+                slide.pop(key, None)
+        return [slide, swot]
+    return [slide]
 
 
 def _coerce_lists(slide: dict) -> None:

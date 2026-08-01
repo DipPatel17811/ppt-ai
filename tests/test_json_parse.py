@@ -288,5 +288,72 @@ class QwenRealOutputTests(unittest.TestCase):
         self.assertTrue(co.cta.startswith("Stay informed"))
 
 
+class QwenRound3OutputTests(unittest.TestCase):
+    """Second Colab deck: merged dashboard+swot slide, missing slide braces,
+    an unclosed comparison element and sibling hero/agenda objects."""
+
+    FIXTURE = os.path.join(os.path.dirname(__file__), "data", "failed_output2.txt")
+
+    @classmethod
+    def setUpClass(cls):
+        with open(cls.FIXTURE, encoding="utf-8") as fh:
+            cls.ast = strict_parse(fh.read())
+
+    def test_parses_full_real_output(self):
+        self.assertEqual(len(self.ast.slides), 11)
+        self.assertEqual(self.ast.title, "Digital Transformation")
+
+    def test_merged_dashboard_and_swot_split(self):
+        types = [s.type for s in self.ast.slides]
+        self.assertIn("dashboard", types)
+        self.assertIn("swot", types)
+        self.assertLess(types.index("dashboard"), types.index("swot"))
+
+    def test_dashboard_metrics_coerced(self):
+        db = [s for s in self.ast.slides if s.type == "dashboard"][0]
+        self.assertEqual(db.metrics[0].label, "Customer Satisfaction Score")
+        self.assertEqual(db.metrics[0].value, "90")
+
+    def test_swot_rows_keyed_by_wrong_quadrant(self):
+        sw = [s for s in self.ast.slides if s.type == "swot"][0]
+        self.assertIn("Lack of internal expertise in digital technologies",
+                      sw.weaknesses.items)
+        self.assertIn("Competition from established players", sw.threats.items)
+        self.assertIn("Expanding global reach through digital platforms",
+                      sw.opportunities.items)
+
+    def test_cycle_cycles_become_stages(self):
+        cy = [s for s in self.ast.slides if s.type == "cycle"][0]
+        self.assertEqual(cy.stages, ["Analyze current state", "Identify pain points",
+                                     "Set clear vision and priorities"])
+
+    def test_hierarchy_levels_become_children(self):
+        hi = [s for s in self.ast.slides if s.type == "hierarchy"][0]
+        self.assertEqual(hi.root.name, "Leadership Hierarchy")
+        self.assertEqual(hi.root.children[0].name, "CEO")
+        self.assertEqual(hi.root.children[0].role, "Chief Executive Officer")
+
+    def test_agenda_topic_items_coerced(self):
+        agenda = [s for s in self.ast.slides if s.type == "agenda"][0]
+        self.assertEqual(len(agenda.items), 5)
+        self.assertIn("Introduction to Digital Transformation", agenda.items)
+
+    def test_roadmap_phases_coerced(self):
+        rm = [s for s in self.ast.slides if s.type == "roadmap"][0]
+        self.assertEqual([p.name for p in rm.phases],
+                         ["Discovery", "Design", "Build", "Launch"])
+
+    def test_timeline_date_events_coerced(self):
+        tl = [s for s in self.ast.slides if s.type == "timeline"][0]
+        self.assertEqual(tl.items[0].label, "2023-01-01")
+        self.assertEqual(tl.items[0].title,
+                         "Initiate digital transformation initiative")
+
+    def test_conclusion_takeaway_text_and_cta(self):
+        co = [s for s in self.ast.slides if s.type == "conclusion"][0]
+        self.assertEqual(len(co.takeaways), 4)
+        self.assertEqual(co.cta, "Ready to take action?")
+
+
 if __name__ == "__main__":
     unittest.main()
