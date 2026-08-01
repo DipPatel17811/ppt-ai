@@ -67,5 +67,86 @@ class StrictParseTests(unittest.TestCase):
         self.assertTrue(errors)
 
 
+class JsonRepairTests(unittest.TestCase):
+    def test_repair_missing_comma_between_slides(self):
+        raw = ('{"title":"Deck","slides":['
+               '{"type":"title","title":"A"} '
+               '{"type":"title","title":"B"}]}')
+        ast = strict_parse(raw)
+        self.assertEqual(len(ast.slides), 2)
+
+    def test_repair_missing_comma_between_bullets(self):
+        raw = ('{"title":"Deck","slides":[{"type":"bullets","title":"B",'
+               '"bullets":["one" "two"]}]}')
+        ast = strict_parse(raw)
+        bullets = [s for s in ast.slides if s.type == "bullets"][0]
+        self.assertEqual([b.text for b in bullets.bullets], ["one", "two"])
+
+    def test_repair_missing_comma_after_number(self):
+        raw = '{"title":"Deck","slides":[{"type":"bullets","title":"B",' \
+              '"bullets":[{"text":"a","level":0} {"text":"b","level":1}]}]}'
+        ast = strict_parse(raw)
+        bullets = [s for s in ast.slides if s.type == "bullets"][0]
+        self.assertEqual(len(bullets.bullets), 2)
+
+    def test_repair_trailing_comma(self):
+        raw = '{"title":"Deck","slides":[{"type":"title","title":"A",}]}'
+        ast = strict_parse(raw)
+        self.assertEqual(len(ast.slides), 1)
+
+    def test_repair_truncated_deck(self):
+        raw = ('{"title":"Deck","slides":['
+               '{"type":"title","title":"A"},'
+               '{"type":"title","title":"B"}')
+        ast = strict_parse(raw)
+        self.assertEqual(len(ast.slides), 2)
+
+    def test_repair_truncated_mid_slide(self):
+        raw = ('{"title":"Deck","slides":['
+               '{"type":"title","title":"A"},'
+               '{"type":"title","title":"B"},'
+               '{"type":"bullets"')
+        ast = strict_parse(raw)
+        self.assertEqual(len(ast.slides), 2)
+
+    def test_repair_truncated_inside_unterminated_string(self):
+        raw = '{"title":"Deck","slides":[{"type":"title","title":"A"},' \
+              '{"type":"title","title":"Unfinished'
+        ast = strict_parse(raw)
+        self.assertEqual(len(ast.slides), 1)
+        self.assertEqual(ast.slides[0].title, "A")
+
+    def test_repair_truncated_before_any_closing_brace(self):
+        raw = '{"title":"Deck","slides":[{"type":"title","title":"Unfinished'
+        with self.assertRaises(JSONParseError) as ctx:
+            strict_parse(raw)
+        self.assertIn("slides.0.title", ctx.exception.message)
+
+    def test_repair_extra_data_after_deck(self):
+        raw = ('{"title":"Deck","slides":[{"type":"title","title":"A"}]}'
+               '{"title":"Junk"}')
+        ast = strict_parse(raw)
+        self.assertEqual(ast.title, "Deck")
+        self.assertEqual(len(ast.slides), 1)
+
+    def test_repair_single_quotes(self):
+        raw = "{'title':'Deck','slides':[{'type':'title','title':'Hello'}]}"
+        ast = strict_parse(raw)
+        self.assertEqual(ast.title, "Deck")
+
+    def test_repair_preserves_apostrophe_text(self):
+        raw = ('{"title":"Deck","slides":[{"type":"bullets","title":"B",'
+               '"bullets":[{"text":"It\'s a great plan"}]}]}')
+        ast = strict_parse(raw)
+        bullets = [s for s in ast.slides if s.type == "bullets"][0]
+        self.assertEqual(bullets.bullets[0].text, "It's a great plan")
+
+    def test_repair_failure_preserves_original_error(self):
+        with self.assertRaises(JSONParseError) as ctx:
+            strict_parse("{ this is not json")
+        self.assertIn("Expecting", ctx.exception.message)
+        self.assertNotIn("schema", ctx.exception.message)
+
+
 if __name__ == "__main__":
     unittest.main()

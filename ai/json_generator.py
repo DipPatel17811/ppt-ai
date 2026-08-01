@@ -81,12 +81,12 @@ class JSONGenerator:
             kwargs["device"] = 0
 
         try:
+            # Generation parameters (max_new_tokens / temperature) are passed
+            # at call time in ``generate``; constructing the pipeline with them
+            # triggers transformers deprecation warnings about generation_config.
             return hf_pipeline(
                 "text-generation",
                 model=self.model_name,
-                max_new_tokens=self.max_new_tokens,
-                temperature=self.temperature,
-                do_sample=self.temperature > 0,
                 **kwargs,
             )
         except ImportError as exc:  # pragma: no cover - bitsandbytes missing
@@ -135,7 +135,12 @@ class JSONGenerator:
     def generate(self, topic: str, sections: Optional[list] = None,
                  tone: str = "professional") -> str:
         prompt = self.build_prompt(topic, sections, tone)
-        outputs = self.pipeline(prompt, max_new_tokens=self.max_new_tokens)
+        outputs = self.pipeline(
+            prompt,
+            max_new_tokens=self.max_new_tokens,
+            temperature=self.temperature,
+            do_sample=self.temperature > 0,
+        )
         text = outputs[0]["generated_text"]
         # strip the prompt echo if the model repeats it
         if text.startswith(prompt):
