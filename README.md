@@ -105,29 +105,54 @@ title,bullets,process`, `--tone`, and `--json` (AST-only output).
 Rendering and validation need no GPU. The AI path can use the free T4 for a
 small instruct model.
 
+**Cell 1 — clone the repo (idempotent) and cd into it:**
+
 ```python
-# In a Colab cell
-!git clone https://github.com/DipPatel17811/ppt-ai.git
-%cd ppt-ai
+import os
+if not os.path.isdir("/content/ppt-ai"):
+    !git clone https://github.com/DipPatel17811/ppt-ai.git
+os.chdir("/content/ppt-ai")
+```
+
+**Cell 2 — install dependencies:**
+
+```python
 !pip install -q -r requirements.txt transformers
+```
 
-# Offline, deterministic deck (no GPU needed)
+**Cell 3 — build a deck (offline, no GPU needed):**
+
+```python
 !python app.py generate "Digital Transformation" --mode deterministic -o deck.pptx --validate
+```
 
-# AI mode on the free T4 (default model: Qwen2.5-1.5B-Instruct)
+**Cell 4 (optional) — AI mode on the free T4:**
+
+```python
 !python app.py generate "Digital Transformation" --mode ai --device auto -o deck.pptx --validate
+```
 
-# Bigger model via 4-bit quantisation (needs bitsandbytes)
+**Cell 5 (optional) — bigger model via 4-bit quantisation:**
+
+```python
 !pip install -q bitsandbytes
 !python app.py generate "Digital Transformation" --mode ai --model google/gemma-2-2b-it --device auto --quantize -o deck.pptx --validate
+```
 
-# Download the deck
+**Cell 6 — download the deck:**
+
+```python
 from google.colab import files
 files.download("deck.pptx")
 ```
 
-`--device auto` moves the model to the GPU automatically (`cuda` when
-available, otherwise CPU); `--quantize` loads in 4-bit for larger models.
+Notes:
+- `!python app.py ...` must run from the repo root so local imports resolve.
+  `os.chdir` (or `%cd`) persists across cells, but a **runtime restart resets
+  the working directory to `/content`** — if a cell reports
+  `No such file or directory: 'app.py'`, re-run Cell 1 first.
+- `--device auto` moves the model to the GPU automatically (`cuda` when
+  available, otherwise CPU); `--quantize` loads in 4-bit for larger models.
 
 ## Tests
 
