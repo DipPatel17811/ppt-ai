@@ -113,6 +113,7 @@ class JSONGenerator:
             f"Produce {asked}. Use only these slide types: {', '.join(kinds)}.\n\n"
             f"STRICT OUTPUT RULES:\n"
             f"1. Output ONLY valid JSON. No markdown, no code fences, no commentary.\n"
+            f"   Output the deck exactly once; never repeat or echo it.\n"
             f"2. The JSON is an object with keys: \"title\", \"theme\" (optional), "
             f"\"slides\" (array).\n"
             f"3. Every slide has a \"type\" matching one of the allowed types and "

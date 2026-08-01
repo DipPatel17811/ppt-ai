@@ -1,5 +1,6 @@
 """Strict JSON parsing / coercion tests (ai.validator)."""
 
+import os
 import unittest
 
 from ai.validator import JSONParseError, strict_parse, try_parse
@@ -180,6 +181,82 @@ class JsonRepairTests(unittest.TestCase):
             strict_parse("{ this is not json")
         self.assertIn("Expecting", ctx.exception.message)
         self.assertNotIn("schema", ctx.exception.message)
+
+    def test_repair_missing_slide_open_brace_after_agenda(self):
+        # Qwen drops the ``{`` of every slide after the agenda: ``]},"type":...``
+        raw = ('{"title":"Deck","slides":['
+               '{"type":"agenda","title":"Agenda","items":["One"]},'
+               '"type":"timeline","title":"T","items":["Now"]},'
+               '"type":"bullets","title":"B","bullets":["x"]}]}')
+        ast = strict_parse(raw)
+        self.assertEqual([s.type for s in ast.slides],
+                         ["agenda", "timeline", "bullets"])
+
+    def test_repair_echoed_deck_truncated_first_value(self):
+        # The model echoes the whole deck but the first deck is cut off
+        # (missing its closing ``}``) because generation hit the token cap.
+        deck = ('{"title":"Deck","slides":['
+                '{"type":"agenda","title":"Agenda","items":["One","Two"]},'
+                '{"type":"bullets","title":"B","bullets":["x"]}]')
+        ast = strict_parse(deck + "\n" + deck + "}")
+        self.assertEqual(ast.title, "Deck")
+        self.assertEqual(len(ast.slides), 2)
+
+
+class QwenRealOutputTests(unittest.TestCase):
+    """The exact Colab output that used to fail must repair end-to-end."""
+
+    FIXTURE = os.path.join(os.path.dirname(__file__), "data", "failed_output.txt")
+
+    @classmethod
+    def setUpClass(cls):
+        with open(cls.FIXTURE, encoding="utf-8") as fh:
+            cls.ast = strict_parse(fh.read())
+
+    def test_parses_full_real_output(self):
+        self.assertEqual(len(self.ast.slides), 10)
+        self.assertEqual(self.ast.title, "Digital Transformation")
+
+    def test_agenda_bullet_items_coerced(self):
+        agenda = [s for s in self.ast.slides if s.type == "agenda"][0]
+        self.assertTrue(all(isinstance(i, str) for i in agenda.items))
+        self.assertTrue(any("Introduction" in i for i in agenda.items))
+
+    def test_timeline_date_events_coerced(self):
+        tl = [s for s in self.ast.slides if s.type == "timeline"][0]
+        self.assertEqual(tl.items[0].label, "2023-01-01")
+        self.assertEqual(tl.items[0].title, "Discovery Phase")
+
+    def test_roadmap_phases_truncated(self):
+        rm = [s for s in self.ast.slides if s.type == "roadmap"][0]
+        self.assertLessEqual(len(rm.phases), 5)
+        self.assertEqual(rm.phases[0].name, "Phase 1: Discovery")
+        self.assertEqual(rm.phases[0].items, ["Task A", "Task B", "Task C"])
+
+    def test_cycle_phases_renamed_to_stages(self):
+        cy = [s for s in self.ast.slides if s.type == "cycle"][0]
+        self.assertEqual(len(cy.stages), 6)
+
+    def test_hierarchy_levels_become_root_children(self):
+        hi = [s for s in self.ast.slides if s.type == "hierarchy"][0]
+        self.assertEqual(hi.root.name, "Hierarchy of Needs")
+        self.assertEqual(hi.root.children[0].name, "Leadership Buy-In")
+        self.assertEqual(hi.root.children[0].role, "Level 1")
+
+    def test_dashboard_metrics_coerced(self):
+        db = [s for s in self.ast.slides if s.type == "dashboard"][0]
+        self.assertEqual(db.metrics[0].label, "Revenue Growth Rate")
+        self.assertEqual(db.metrics[0].value, "+7%")
+
+    def test_swot_analysis_rows_split_into_quadrants(self):
+        sw = [s for s in self.ast.slides if s.type == "swot"][0]
+        self.assertIn("Strong brand reputation", sw.strengths.items)
+        self.assertIn("Competition from emerging players", sw.threats.items)
+
+    def test_conclusion_takeaway_text_and_cta(self):
+        co = [s for s in self.ast.slides if s.type == "conclusion"][0]
+        self.assertTrue(all(isinstance(t, str) for t in co.takeaways))
+        self.assertTrue(co.cta.startswith("Stay informed"))
 
 
 if __name__ == "__main__":

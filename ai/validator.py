@@ -13,6 +13,8 @@ from typing import List, Optional, Tuple
 
 from pydantic import ValidationError
 
+from config import (MAX_DASHBOARD_METRICS, MAX_HIERARCHY_NODES, MAX_PHASES,
+                    MAX_STEPS, MAX_SWOT_ITEMS, MAX_TIMELINE_ITEMS)
 from schema import Presentation
 from validator import validate_presentation
 
@@ -110,9 +112,28 @@ def _fix_structure(masked: str) -> str:
     return masked
 
 
+def _fix_missing_slide_braces(masked: str, tokens: List[str]) -> str:
+    """Insert the ``{`` a slide loses when the model drops it after ``]},``.
+
+    Qwen emits ``...items":[...]},\"type\":\"comparison\"...`` instead of
+    ``...items\":[...]},{\"type\":\"comparison\"...``, leaving the following
+    slide's keys dangling at the array level.  ``]},`` followed by the
+    ``\"type\"`` key means a new slide object starts there.
+    """
+    def _replace(match: "re.Match") -> str:
+        index = int(match.group(1)[1:-1])
+        if 0 <= index < len(tokens) and tokens[index] == '"type"':
+            return "}, {%s:" % match.group(1)
+        return match.group(0)
+
+    return re.sub(r"}\s*,\s*(%s):" % _PH_RE, _replace, masked)
+
+
 def _structural_repair(text: str) -> str:
     masked, tokens = _mask_strings(text)
-    return _unmask(_fix_structure(masked), tokens)
+    masked = _fix_structure(masked)
+    masked = _fix_missing_slide_braces(masked, tokens)
+    return _unmask(masked, tokens)
 
 
 def _swap_single_quotes(text: str) -> str:
@@ -182,7 +203,7 @@ def _try_parse_with_truncation(text: str) -> Optional[dict]:
     masked, tokens = _mask_strings(text)
     cut_points = [match.end() for match in re.finditer(
         r"(%s|[}\]])" % _PH_RE, masked)]
-    for pos in reversed(cut_points[-200:]):
+    for pos in reversed(cut_points):
         prefix = _drop_dangling_string(masked[:pos])
         closed = _close_open_structures(prefix)
         try:
@@ -212,6 +233,165 @@ def _repair_json(text: str) -> Optional[dict]:
     return None
 
 
+def _normalize_slide(slide: dict) -> Optional[dict]:
+    """Map the slide shapes the Qwen 1.5B model emits onto the strict schema.
+
+    Slides with no renderable content (e.g. an empty comparison chart) are
+    dropped (``None``).  Everything else is coerced key-by-key; items that
+    match none of the known shapes are left untouched so the schema can still
+    report exactly where they fail.
+    """
+    stype = slide["type"]
+    copy = dict(slide)
+
+    def _pick_text(item: dict) -> Optional[str]:
+        for key in ("text", "title", "step", "phase", "event", "task",
+                    "label", "name", "metric", "date", "description", "bullet"):
+            value = item.get(key)
+            if isinstance(value, str) and value:
+                return value
+        return None
+
+    def _as_strings(items: list, primary: str) -> list:
+        out = []
+        for item in items:
+            if isinstance(item, str):
+                out.append(item)
+            elif isinstance(item, dict):
+                value = _pick_text(item)
+                out.append(value if value is not None else item)
+        return out
+
+    if stype == "hero":
+        if isinstance(copy.get("image"), str):
+            copy["image"] = {"source": copy["image"]}
+        return copy
+
+    if stype == "agenda":
+        if isinstance(copy.get("items"), list):
+            copy["items"] = _as_strings(copy["items"], "text")
+        return copy
+
+    if stype == "timeline" and isinstance(copy.get("items"), list):
+        items = []
+        for item in copy["items"]:
+            if isinstance(item, str):
+                items.append({"title": item})
+            elif isinstance(item, dict):
+                items.append({
+                    "label": item.get("date") or item.get("label"),
+                    "title": (item.get("event") or item.get("title")
+                              or item.get("text") or ""),
+                    "detail": item.get("description") or item.get("detail"),
+                })
+        copy["items"] = items[:MAX_TIMELINE_ITEMS]
+        return copy
+
+    if stype == "process":
+        if isinstance(copy.get("steps"), list):
+            copy["steps"] = _as_strings(copy["steps"], "step")[:MAX_STEPS]
+        return copy
+
+    if stype == "roadmap":
+        if isinstance(copy.get("phases"), list):
+            phases = []
+            for phase in copy["phases"]:
+                if isinstance(phase, str):
+                    phases.append({"name": phase, "items": []})
+                elif isinstance(phase, dict):
+                    phases.append({
+                        "name": phase.get("phase") or phase.get("name") or "",
+                        "period": phase.get("period"),
+                        "items": _as_strings(phase.get("tasks", []), "task")[:4],
+                    })
+            copy["phases"] = phases[:MAX_PHASES]
+        return copy
+
+    if stype == "cycle":
+        stages = copy.get("phases") if isinstance(copy.get("phases"), list) \
+            else copy.get("stages")
+        if isinstance(stages, list):
+            copy["stages"] = _as_strings(stages, "phase")[:MAX_STEPS]
+        copy.pop("phases", None)
+        return copy
+
+    if stype == "hierarchy":
+        if not isinstance(copy.get("root"), dict) and isinstance(copy.get("levels"), list):
+            children = []
+            for level in copy["levels"]:
+                if isinstance(level, dict):
+                    children.append({
+                        "name": (level.get("title") or level.get("name")
+                                 or level.get("level") or ""),
+                        "role": level.get("level") or level.get("role"),
+                    })
+                elif isinstance(level, str):
+                    children.append({"name": level})
+            copy["root"] = {"name": copy.get("title") or "Organization",
+                            "children": children[:MAX_HIERARCHY_NODES]}
+        copy.pop("levels", None)
+        return copy
+
+    if stype == "dashboard":
+        if isinstance(copy.get("metrics"), list):
+            metrics = []
+            for metric in copy["metrics"]:
+                if isinstance(metric, str):
+                    metrics.append({"label": metric, "value": ""})
+                elif isinstance(metric, dict):
+                    metrics.append({
+                        "label": metric.get("metric") or metric.get("label") or "",
+                        "value": metric.get("value") or metric.get("current") or "",
+                        "delta": metric.get("delta"),
+                        "icon": metric.get("icon"),
+                    })
+            copy["metrics"] = metrics[:MAX_DASHBOARD_METRICS]
+        return copy
+
+    if stype == "swot":
+        rows = copy.get("analysis")
+        if isinstance(rows, list) and all(isinstance(r, dict) for r in rows):
+            quad = {"strengths": [], "weaknesses": [],
+                    "opportunities": [], "threats": []}
+            for src, dst in (("strength", "strengths"), ("weakness", "weaknesses"),
+                             ("opportunity", "opportunities"), ("threat", "threats")):
+                for row in rows:
+                    value = row.get(src)
+                    if isinstance(value, str) and value:
+                        quad[dst].append(value)
+            for key, values in quad.items():
+                copy[key] = {"title": key.capitalize(),
+                             "items": values[:MAX_SWOT_ITEMS]}
+            copy.pop("analysis", None)
+        return copy
+
+    if stype == "comparison":
+        if not copy.get("left") and not copy.get("right"):
+            chart = copy.get("chart")
+            if isinstance(chart, dict) and not chart.get("categories"):
+                return None
+        return copy
+
+    if stype == "conclusion":
+        cta = copy.get("cta")
+        if isinstance(copy.get("takeaways"), list):
+            takeaways = []
+            for take in copy["takeaways"]:
+                if isinstance(take, str):
+                    takeaways.append(take)
+                elif isinstance(take, dict):
+                    value = _pick_text(take)
+                    takeaways.append(value if value is not None else take)
+                    if not cta and isinstance(take.get("action"), str) and take.get("action"):
+                        cta = take["action"]
+            copy["takeaways"] = takeaways[:6]
+        if cta:
+            copy["cta"] = cta
+        return copy
+
+    return copy
+
+
 def _coerce(data) -> dict:
     """Coerce common LLM quirks before schema validation."""
     if not isinstance(data, dict):
@@ -221,12 +401,17 @@ def _coerce(data) -> dict:
     if slides is not None and not isinstance(slides, list):
         raise JSONParseError("'slides' must be a list")
 
+    normalized = []
     for slide in data.get("slides", []):
         if not isinstance(slide, dict):
             raise JSONParseError("Every slide must be an object")
         if "type" not in slide or not isinstance(slide["type"], str):
             raise JSONParseError("Every slide must declare a 'type'")
-        _coerce_lists(slide)
+        shaped = _normalize_slide(slide)
+        if shaped is not None:
+            _coerce_lists(shaped)
+            normalized.append(shaped)
+    data["slides"] = normalized
     return data
 
 

@@ -113,7 +113,7 @@ LLM_MODELS: Dict[str, str] = {
 LLM_DEFAULT_MODEL: str = LLM_MODELS["qwen"]
 LLM_DEVICE: str = "auto"   # "auto" | "cuda" | "cpu" (auto = GPU when available)
 LLM_QUANTIZE: bool = False  # 4-bit loading via bitsandbytes for larger models
-LLM_MAX_NEW_TOKENS: int = 3000
+LLM_MAX_NEW_TOKENS: int = 4096
 LLM_TEMPERATURE: float = 0.4
 LLM_TIMEOUT_ATTEMPTS: int = 3
 
