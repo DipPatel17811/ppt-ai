@@ -340,6 +340,20 @@ def _comparison_sides(title: Optional[str]) -> Tuple[Optional[str], Optional[str
     return None, None
 
 
+def _is_placeholder_image(source: str) -> bool:
+    """True for the generic image paths LLMs fill in (``/path/to/image.png``).
+
+    Placeholder images would fail at render time, so they are dropped at
+    parse time and the slide renders without an image instead.
+    """
+    s = source.strip().lower()
+    if not s or s in ("none", "null", "placeholder"):
+        return True
+    if s.startswith("/path/to/"):
+        return True
+    return False
+
+
 def _normalize_slide(slide: dict) -> Optional[dict]:
     """Map the slide shapes the Qwen 1.5B model emits onto the strict schema.
 
@@ -350,6 +364,12 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
     """
     stype = slide["type"]
     copy = dict(slide)
+
+    image = copy.get("image")
+    if isinstance(image, dict):
+        src = image.get("source")
+        if isinstance(src, str) and _is_placeholder_image(src):
+            copy.pop("image", None)
 
     def _pick_text(item: dict) -> Optional[str]:
         for key in ("text", "title", "step", "phase", "event", "task",
@@ -372,7 +392,10 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
 
     if stype == "hero":
         if isinstance(copy.get("image"), str):
-            copy["image"] = {"source": copy["image"]}
+            if _is_placeholder_image(copy["image"]):
+                copy.pop("image", None)
+            else:
+                copy["image"] = {"source": copy["image"]}
         if not copy.get("subtitle") and isinstance(copy.get("caption"), str):
             copy["subtitle"] = copy["caption"]
         copy.pop("caption", None)
