@@ -18,8 +18,9 @@ class HeroTemplate(BaseTemplate):
         t = b.theme
         area = b.content_rect()
 
-        if c.image:
-            b.image(self._full_rect(b), c.image, key="hero_image")
+        shape = b.image(self._full_rect(b), c.image, key="hero_image") \
+            if c.image else None
+        if shape is not None:
             b.rect(self._full_rect(b), fill=t.spec.foreground, alpha=0.58, key="hero_overlay")
         else:
             b.background(t.spec.primary)

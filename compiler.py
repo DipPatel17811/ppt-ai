@@ -342,8 +342,10 @@ class Compiler:
         return group
 
     # -- images ----------------------------------------------------------
-    def add_picture(self, slide, rect: Rect, spec: ImageSpec) -> object:
+    def add_picture(self, slide, rect: Rect, spec: ImageSpec) -> Optional[object]:
         path = self._resolve_image(spec.source)
+        if path is None:
+            return None
         try:
             from PIL import Image
         except Exception:
@@ -382,16 +384,21 @@ class Compiler:
             picture._element.set("descr", spec.alt_text)
         return picture
 
-    def _resolve_image(self, source: str) -> Path:
+    def _resolve_image(self, source: str) -> Optional[Path]:
         if source.lower().startswith(("http://", "https://")):
             suffix = Path(source).suffix or ".png"
-            tmp = tempfile.mkstemp(suffix=suffix, prefix="ppt_ai_img_")[1]
-            urllib.request.urlretrieve(source, tmp)  # noqa: S310
+            try:
+                tmp = tempfile.mkstemp(suffix=suffix, prefix="ppt_ai_img_")[1]
+                urllib.request.urlretrieve(source, tmp)  # noqa: S310
+            except Exception:
+                # The model invents image URLs that may 404; skip rather
+                # than fail the whole deck.
+                return None
             self._temp_files.append(tmp)
             return Path(tmp)
         path = Path(source)
         if not path.exists():
-            raise FileNotFoundError(f"Image source not found: {source}")
+            return None
         return path
 
     # -- charts ----------------------------------------------------------

@@ -246,6 +246,8 @@ class SlideBuilder:
 
     def image(self, rect: Rect, spec: ImageSpec, key: Optional[str] = None):
         shape = self.compiler.add_picture(self.slide, rect, spec)
+        if shape is None:
+            return None
         return self._keyed(key, shape)
 
     def chart(self, rect: Rect, spec: ChartSpec, key: Optional[str] = None):
