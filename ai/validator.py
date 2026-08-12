@@ -529,6 +529,8 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
                     })
             copy["metrics"] = metrics[:MAX_DASHBOARD_METRICS]
             copy.pop("dashboards", None)
+            if not copy["metrics"]:
+                return None
             return copy
         if isinstance(copy.get("metrics"), list):
             metrics = []
@@ -543,6 +545,8 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
                         "icon": metric.get("icon"),
                     })
             copy["metrics"] = metrics[:MAX_DASHBOARD_METRICS]
+            if not copy["metrics"]:
+                return None
         return copy
 
     if stype == "swot":

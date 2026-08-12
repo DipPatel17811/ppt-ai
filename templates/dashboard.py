@@ -21,7 +21,10 @@ class DashboardTemplate(BaseTemplate):
         area = b.header(c.kicker, c.title, c.subtitle)
 
         metrics = c.metrics[:6]
-        cols = 3 if len(metrics) >= 3 else len(metrics)
+        if not metrics:
+            b.notes(c.notes)
+            return
+        cols = 3 if len(metrics) >= 3 else max(1, len(metrics))
         rows = ceil(len(metrics) / cols)
         card_gap = space(2)
         cards_area = Rect(area.x, area.y, area.width, rows * 86 + (rows - 1) * card_gap)
