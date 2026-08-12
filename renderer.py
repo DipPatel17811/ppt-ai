@@ -18,7 +18,7 @@ from typing import Optional
 from config import ASPECT_RATIOS, MARGIN_BOTTOM, MARGIN_TOP, MARGIN_X
 from morph import ObjectIdBank
 from schema import Presentation, TransitionKind
-from theme import Theme
+from theme import DEFAULT_THEME, Theme
 
 from animation import plan_for
 from builder import SlideBuilder
@@ -75,7 +75,12 @@ class PresentationRenderer:
     def _resolve_theme(ast: Presentation) -> Theme:
         if ast.theme_spec is not None:
             return Theme.from_spec(ast.theme_spec)
-        return Theme.builtin(ast.theme or "corporate")
+        try:
+            return Theme.builtin(ast.theme or "corporate")
+        except KeyError:
+            # The model invents theme names ("business", ...); fall back to
+            # the default preset rather than fail the render.
+            return Theme.builtin(DEFAULT_THEME)
 
     def _apply_animation(self, builder: SlideBuilder, pptx_slide, semantic) -> None:
         plan = plan_for(semantic, builder.registered)
