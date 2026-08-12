@@ -127,6 +127,7 @@ class JSONGenerator:
             f"Example:\n"
             f'{{"title":"{topic}","theme":"corporate","slides":['
             f'{{"type":"title","title":"{topic}","subtitle":"Strategic overview","kicker":"Executive Briefing"}},'
+            f'{{"type":"agenda","title":"Agenda","items":["Introduction","Impact assessment","Strategy development"]}},'
             f'{{"type":"bullets","title":"Why now","bullets":['
             f'{{"text":"Market forces are shifting decisively"}},'
             f'{{"text":"Technology has reached a tipping point"}}]}},'

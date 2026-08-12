@@ -364,7 +364,10 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
             copy["items"] = _as_strings(copy["items"], "text")
         elif isinstance(copy.get("agendas"), list):
             copy["items"] = _as_strings(copy["agendas"], "topic")
+        elif isinstance(copy.get("steps"), list):
+            copy["items"] = _as_strings(copy["steps"], "text")
         copy.pop("agendas", None)
+        copy.pop("steps", None)
         return copy
 
     if stype == "timeline" and (isinstance(copy.get("items"), list)
