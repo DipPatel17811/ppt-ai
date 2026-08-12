@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 from config import DEFAULT_OUTPUT, DEFAULT_THEME
+from schema import AspectRatio
 
 
 def _dump_failed_output(exc) -> None:
@@ -76,7 +77,7 @@ def _generate(args) -> None:
         raise
 
     if args.aspect:
-        ast.aspect = args.aspect  # type: ignore[assignment]
+        ast.aspect = AspectRatio(args.aspect)
     if args.theme:
         ast.theme = args.theme
 
