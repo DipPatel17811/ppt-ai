@@ -118,15 +118,23 @@ class JSONGenerator:
             f"\"slides\" (array).\n"
             f"3. Every slide has a \"type\" matching one of the allowed types and "
             f"the required fields for that type.\n"
-            f"4. Keep each slide focused: at most 6 bullets/steps, at most 5 roadmap "
+            f"4. A comparison slide's \"comparisons\" is an array of objects; each "
+            f"object uses the key \"heading\" (never \"name\" or \"title\") plus "
+            f"\"current\" and \"future\" string values.\n"
+            f"5. Keep each slide focused: at most 6 bullets/steps, at most 5 roadmap "
             f"phases, concise titles.\n"
-            f"5. Write sharp, specific business language. Never invent fake statistics.\n\n"
+            f"6. Write sharp, specific business language. Never invent fake statistics.\n\n"
             f"Example:\n"
             f'{{"title":"{topic}","theme":"corporate","slides":['
             f'{{"type":"title","title":"{topic}","subtitle":"Strategic overview","kicker":"Executive Briefing"}},'
             f'{{"type":"bullets","title":"Why now","bullets":['
             f'{{"text":"Market forces are shifting decisively"}},'
             f'{{"text":"Technology has reached a tipping point"}}]}},'
+            f'{{"type":"comparison","title":"Current vs Future","comparisons":['
+            f'{{"heading":"Legacy Systems","current":"Slow to adapt, rigid, costly",'
+            f'"future":"Flexible, scalable, cost-effective"}},'
+            f'{{"heading":"Customer Experience","current":"Poor, fragmented, inconsistent",'
+            f'"future":"Seamless and consistent"}}]}},'
             f'{{"type":"process","title":"How we will win","steps":["Discover","Design","Build","Launch"]}},'
             f'{{"type":"conclusion","title":"Next steps","takeaways":["Act now","Scale fast","Measure relentlessly"],'
             f'"cta":"Approve the plan"}}]}}\n\n'

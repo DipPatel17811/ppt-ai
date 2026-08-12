@@ -13,8 +13,9 @@ from typing import List, Optional, Tuple
 
 from pydantic import ValidationError
 
-from config import (MAX_DASHBOARD_METRICS, MAX_HIERARCHY_NODES, MAX_PHASES,
-                    MAX_STEPS, MAX_SWOT_ITEMS, MAX_TIMELINE_ITEMS)
+from config import (MAX_COMPARISON_POINTS, MAX_DASHBOARD_METRICS,
+                    MAX_HIERARCHY_NODES, MAX_PHASES, MAX_STEPS, MAX_SWOT_ITEMS,
+                    MAX_TIMELINE_ITEMS)
 from schema import Presentation
 from validator import validate_presentation
 
@@ -307,6 +308,22 @@ def _repair_json(text: str) -> Optional[dict]:
     return None
 
 
+def _comparison_sides(title: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """Split a comparison title like ``"Current State vs Vision"`` into its two sides.
+
+    Returns ``(left, right)`` or ``(None, None)`` when the title has no
+    separator so callers can fall back to defaults.
+    """
+    if isinstance(title, str):
+        for sep in (" vs ", " vs. ", "|", " — ", " - ", "-"):
+            if sep in title:
+                parts = [part.strip() for part in title.split(sep)
+                         if part.strip()]
+                if len(parts) >= 2:
+                    return parts[0], parts[1]
+    return None, None
+
+
 def _normalize_slide(slide: dict) -> Optional[dict]:
     """Map the slide shapes the Qwen 1.5B model emits onto the strict schema.
 
@@ -485,7 +502,8 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
         quad = {"strengths": [], "weaknesses": [],
                 "opportunities": [], "threats": []}
         src_map = (("strength", "strengths"), ("weakness", "weaknesses"),
-                   ("opportunity", "opportunities"), ("threat", "threats"))
+                   ("opportunity", "opportunities"), ("threat", "threats"),
+                   ("option", "weaknesses"))
         moved = False
 
         def _collect(key: str, value) -> None:
@@ -521,24 +539,96 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
     if stype == "comparison":
         comps = copy.get("comparisons")
         if isinstance(comps, list):
-            left = right = None
-            for item in comps:
-                if not isinstance(item, dict):
-                    continue
-                if "left" in item:
-                    left = item["left"]
-                if "right" in item:
-                    right = item["right"]
-            for side, value in (("left", left), ("right", right)):
-                if isinstance(value, dict):
-                    copy[side] = {
-                        "heading": value.get("name") or value.get("heading") or "",
-                        "subheading": value.get("subheading"),
-                        "points": ([value["description"]]
-                                   if isinstance(value.get("description"), str)
-                                   and value["description"] else []),
-                        "icon": value.get("icon"),
+            paired = any(isinstance(item, dict)
+                         and ("left" in item or "right" in item)
+                         for item in comps)
+            if paired:
+                # Each item carries ``left``/``right`` side dicts.  Aggregate
+                # every row so no data is dropped: side values become the
+                # column points (metric/value rows become ``"Label: value"``
+                # points), and column headings come from the vs-style title or
+                # the side's own name/heading.
+                left_pts, right_pts = [], []
+                row_labeled = False
+                left_name = right_name = None
+                for item in comps:
+                    if not isinstance(item, dict):
+                        continue
+                    if isinstance(item.get("title"), str):
+                        row_labeled = True
+                    for side, pts in (("left", left_pts), ("right", right_pts)):
+                        value = item.get(side)
+                        if not isinstance(value, dict):
+                            continue
+                        if side == "left" and left_name is None:
+                            left_name = (value.get("name")
+                                         or value.get("heading"))
+                        if side == "right" and right_name is None:
+                            right_name = (value.get("name")
+                                          or value.get("heading"))
+                        label = (item.get("title")
+                                 or value.get("name")
+                                 or value.get("heading")
+                                 or value.get("metric"))
+                        num = value.get("value")
+                        desc = value.get("description") or value.get("text")
+                        if isinstance(num, str) and num:
+                            pts.append(f"{label}: {num}"
+                                       if isinstance(label, str) and label
+                                       else num)
+                        elif isinstance(desc, str) and desc:
+                            pts.append(desc)
+                left_side, right_side = _comparison_sides(copy.get("title"))
+                if row_labeled:
+                    left_head = left_side or left_name or "Current"
+                    right_head = right_side or right_name or "Future"
+                else:
+                    left_head = left_name or left_side or "Current"
+                    right_head = right_name or right_side or "Future"
+                copy["left"] = {"heading": left_head, "subheading": None,
+                                "points": left_pts[:MAX_COMPARISON_POINTS]}
+                copy["right"] = {"heading": right_head, "subheading": None,
+                                 "points": right_pts[:MAX_COMPARISON_POINTS]}
+            else:
+                # Flat rows without ``left``/``right``.  Two shapes:
+                # ``{"heading": ..., "current": ..., "future": ...}`` rows
+                # (column one holds the "current" values, column two the
+                # "future" values), or plain ``{"name": ..., "description":
+                # ...}`` rows paired into the two columns.
+                rows = [item for item in comps if isinstance(item, dict)]
+                if any("current" in row or "future" in row for row in rows):
+                    left, right = _comparison_sides(copy.get("title"))
+                    copy["left"] = {
+                        "heading": left or "Current",
+                        "subheading": None,
+                        "points": [row["current"] for row in rows
+                                   if isinstance(row.get("current"), str)
+                                   and row["current"]][:MAX_COMPARISON_POINTS],
                     }
+                    copy["right"] = {
+                        "heading": right or "Future",
+                        "subheading": None,
+                        "points": [row["future"] for row in rows
+                                   if isinstance(row.get("future"), str)
+                                   and row["future"]][:MAX_COMPARISON_POINTS],
+                    }
+                else:
+                    def _column(col_rows: list, fallback_heading: str) -> dict:
+                        heading = ""
+                        points = []
+                        for row in col_rows:
+                            name = row.get("name") or row.get("heading")
+                            if not heading and isinstance(name, str) and name:
+                                heading = name
+                            desc = row.get("description") or row.get("text")
+                            if isinstance(desc, str) and desc:
+                                points.append(desc)
+                        return {"heading": heading or fallback_heading,
+                                "subheading": None,
+                                "points": points[:MAX_COMPARISON_POINTS]}
+
+                    copy["left"] = _column(rows[0::2], "Current")
+                    copy["right"] = _column(rows[1::2], "Vision")
             copy.pop("comparisons", None)
             return copy
         if not copy.get("left") and not copy.get("right"):
