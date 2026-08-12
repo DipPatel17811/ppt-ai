@@ -16,8 +16,24 @@ from pydantic import ValidationError
 from config import (MAX_COMPARISON_POINTS, MAX_DASHBOARD_METRICS,
                     MAX_HIERARCHY_NODES, MAX_PHASES, MAX_STEPS, MAX_SWOT_ITEMS,
                     MAX_TIMELINE_ITEMS)
-from schema import Presentation
+from schema import (AgendaSlide, BulletsSlide, ComparisonSlide, ConclusionSlide,
+                    CycleSlide, DashboardSlide, HierarchySlide, HeroSlide,
+                    Presentation, ProcessSlide, RoadmapSlide, SlideBase,
+                    SwoSlide, TimelineSlide, TitleSlide)
 from validator import validate_presentation
+
+# Allowed top-level keys per slide type, derived from the schema itself.  The
+# model pads slides with extra metadata (``caption``, ``subheadings``,
+# ``bullet_count``, ...) that ``extra="forbid"`` rejects, so we drop anything
+# outside the schema after normalisation.
+_SLIDE_FIELD_NAMES = {
+    cls.model_fields["type"].default:
+        frozenset(cls.model_fields) | frozenset(SlideBase.model_fields)
+    for cls in (TitleSlide, HeroSlide, AgendaSlide, BulletsSlide,
+                ComparisonSlide, TimelineSlide, ProcessSlide, RoadmapSlide,
+                CycleSlide, HierarchySlide, DashboardSlide, SwoSlide,
+                ConclusionSlide)
+}
 
 
 class JSONParseError(ValueError):
@@ -357,6 +373,11 @@ def _normalize_slide(slide: dict) -> Optional[dict]:
     if stype == "hero":
         if isinstance(copy.get("image"), str):
             copy["image"] = {"source": copy["image"]}
+        if not copy.get("subtitle") and isinstance(copy.get("caption"), str):
+            copy["subtitle"] = copy["caption"]
+        copy.pop("caption", None)
+        if not copy.get("title"):
+            copy["title"] = "Overview"
         return copy
 
     if stype == "agenda":
@@ -679,6 +700,10 @@ def _coerce(data) -> dict:
             shaped = _normalize_slide(shaped)
             if shaped is not None:
                 _coerce_lists(shaped)
+                allowed = _SLIDE_FIELD_NAMES.get(shaped.get("type"))
+                if allowed is not None:
+                    shaped = {key: value for key, value in shaped.items()
+                              if key in allowed}
                 normalized.append(shaped)
     data["slides"] = normalized
     return data
